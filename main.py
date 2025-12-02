@@ -5,12 +5,19 @@ import os
 import random
 import functools
 
+# Image Generation Library
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
 # ==========================================
 # CONFIGURATION
 # ==========================================
 ROLES_ORDER = [
     "Lead", "Vocal", "Piano", "Drum/Cajon", "Bass", "Guitar", 
-    "PPT", "Sound", 
+    "PPT", "Sound", "Lighting/OBS", 
     "MC", 
     "Usher 1", "Usher 2", "Usher 3", 
     "Cleanup 1", "Cleanup 2"
@@ -18,42 +25,39 @@ ROLES_ORDER = [
 
 CLEANUP_OPTIONS = ["LHW", "UF", "LB", "YGSS", "SJS", "PK"]
 
+# MAPPING
 INSTRUMENT_MAP = {
     "WL": "Lead", "V": "Vocal", "P": "Piano", "G": "Guitar", 
     "B": "Bass", "D": "Drum/Cajon", "PPT": "PPT", 
-    "S": "Sound", "SOUND": "Sound", "MC": "MC", "USHER": "Usher"
+    "S": "Sound", "SOUND": "Sound", 
+    "OBS": "Lighting/OBS", "LIGHT": "Lighting/OBS", "L": "Lighting/OBS",
+    "MC": "MC", "USHER": "Usher"
 }
 
-# --- CATEGORY DEFINITIONS ---
+# COLORS & CATEGORIES
 CATEGORY_CONFIG = {
     "Praise & Worship": {
         "roles": ["Lead", "Vocal", "Piano", "Drum/Cajon", "Bass", "Guitar"],
-        "color": "#c00000", # Red
-        "text_col": "white"
+        "color": "#c00000", "text_col": "white"
     },
     "FPH": {
-        "roles": ["PPT", "Sound"],
-        "color": "#0070c0", # Blue
-        "text_col": "white"
+        "roles": ["PPT", "Sound", "Lighting/OBS"], 
+        "color": "#0070c0", "text_col": "white"
     },
     "MC": {
         "roles": ["MC"],
-        "color": "#7030a0", # Purple
-        "text_col": "white"
+        "color": "#7030a0", "text_col": "white"
     },
     "Usher": {
         "roles": ["Usher 1", "Usher 2", "Usher 3"],
-        "color": "#ffc000", # Orange/Yellow
-        "text_col": "black"
+        "color": "#ffc000", "text_col": "black"
     },
     "LG": {
         "roles": ["Cleanup 1", "Cleanup 2"],
-        "color": "#00b050", # Green
-        "text_col": "white"
+        "color": "#00b050", "text_col": "white"
     }
 }
 
-# Map Role -> Category Info
 ROLE_TO_CAT_MAP = {}
 for cat, data in CATEGORY_CONFIG.items():
     for r in data["roles"]:
@@ -130,10 +134,13 @@ class RosterEngine:
                 if code in INSTRUMENT_MAP: caps.append(INSTRUMENT_MAP[code])
                 elif "PPT" in code: caps.append("PPT")
                 elif "SOUND" in code: caps.append("Sound")
+                elif "OBS" in code or "LIGHT" in code: caps.append("Lighting/OBS")
             
             if fph_col and is_active(row[fph_col]):
                 if "Sound" not in caps: caps.append("Sound")
                 if "PPT" not in caps: caps.append("PPT")
+                if "Lighting/OBS" not in caps: caps.append("Lighting/OBS")
+            
             if fmc_col and is_active(row[fmc_col]):
                 if "MC" not in caps: caps.append("MC")
             if fut_col and is_active(row[fut_col]):
@@ -196,6 +203,12 @@ class RosterEngine:
                 else:
                     self.initial_roster[week][role] = ""
 
+            if not self.initial_roster[week].get("Piano"):
+                if self.initial_roster[week].get("Bass"):
+                    bassist = self.initial_roster[week]["Bass"]
+                    self.initial_roster[week]["Bass"] = ""
+                    if bassist in burnout: burnout[bassist] -= 1
+
 # ==========================================
 # GUI CLASS
 # ==========================================
@@ -211,22 +224,26 @@ class RosterApp(tk.Tk):
         self.style.theme_use('clam')
         self.style.map("TCombobox", fieldbackground=[("readonly", "white")])
         
+        if not HAS_PIL:
+            messagebox.showwarning("Missing Library", "Pillow not found. Image export disabled.\nRun: pip install Pillow")
+
         self._build_ui()
 
     def _build_ui(self):
+        # TOP BAR
         top_frame = tk.Frame(self, pady=5, bg="#ddd")
         top_frame.pack(fill=tk.X)
-        
-        tk.Button(top_frame, text="1. Load Excel", command=self.load_file, bg="white").pack(side=tk.LEFT, padx=10)
+        tk.Button(top_frame, text="1. Load Excel", command=self.load_file, bg="white").pack(side=tk.LEFT, padx=5)
         self.lbl_status = tk.Label(top_frame, text="No file loaded", bg="#ddd", fg="red")
         self.lbl_status.pack(side=tk.LEFT)
-        tk.Button(top_frame, text="3. Export", command=self.export_file, bg="#4CAF50", fg="white").pack(side=tk.RIGHT, padx=10)
-        tk.Button(top_frame, text="2. Clear Grid", command=self.clear_grid, bg="#ff9999", fg="black").pack(side=tk.RIGHT, padx=10)
+        
+        tk.Button(top_frame, text="4. Export Image", command=self.export_image_cmd, bg="#0078d7", fg="white", font=("Arial", 9, "bold")).pack(side=tk.RIGHT, padx=5)
+        tk.Button(top_frame, text="3. Export Excel", command=self.export_excel, bg="#4CAF50", fg="white").pack(side=tk.RIGHT, padx=5)
+        tk.Button(top_frame, text="2. Clear Grid", command=self.clear_grid, bg="#ff9999", fg="black").pack(side=tk.RIGHT, padx=5)
 
         paned = tk.PanedWindow(self, orient=tk.VERTICAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # TOP: INPUT GRID
         self.roster_frame = tk.Frame(paned)
         paned.add(self.roster_frame, height=300)
         self.canvas_r = tk.Canvas(self.roster_frame)
@@ -240,11 +257,9 @@ class RosterApp(tk.Tk):
         self.canvas_r.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scroll_y_r.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # BOTTOM: DASHBOARD
         self.dash_frame = tk.Frame(paned, bg="white")
         paned.add(self.dash_frame, stretch="always")
         
-        # Legend
         legend_frame = tk.Frame(self.dash_frame, bg="white")
         legend_frame.pack(fill=tk.X, padx=5, pady=2)
         tk.Label(legend_frame, text="LEGEND:", bg="white", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
@@ -278,31 +293,60 @@ class RosterApp(tk.Tk):
         if not self.combos: return
         if messagebox.askyesno("Confirm", "Clear all selections?"):
             for cb in self.combos.values(): cb.set("")
-            self.validate_all()
-            self.update_dashboard()
+            self.on_selection_change(None)
 
     def render_roster_grid(self):
         for w in self.grid_container.winfo_children(): w.destroy()
         self.combos = {}
 
-        tk.Label(self.grid_container, text="Week", font=("Arial", 9, "bold"), width=15, relief="solid").grid(row=0, column=0, padx=1)
-        for i, role in enumerate(ROLES_ORDER):
-            cat_data = ROLE_TO_CAT_MAP.get(role, {"color": "#ddd"})
-            tk.Label(self.grid_container, text=role, font=("Arial", 9, "bold"), fg=cat_data["color"], width=12, relief="solid").grid(row=0, column=i+1, padx=1)
+        total_rows = len(self.engine.week_columns) + 1
 
-        for r, week in enumerate(self.engine.week_columns):
-            row = r + 1
-            tk.Label(self.grid_container, text=week, font=("Arial", 8), width=15, anchor="w").grid(row=row, column=0, padx=1, pady=5)
-            for c, role in enumerate(ROLES_ORDER):
+        # -- HEADER ROW --
+        # Col 0: Week Text
+        tk.Label(self.grid_container, text="Week", font=("Arial", 9, "bold"), width=15, relief="solid").grid(row=0, column=0, padx=1, sticky="ns")
+        
+        # Col 1: Vertical Bar (NEW ADDITION)
+        sep_main = tk.Frame(self.grid_container, width=3, bg="#888")
+        sep_main.grid(row=0, column=1, rowspan=total_rows, sticky="ns", padx=2)
+
+        current_col = 2 # Start after the separator
+        prev_cat = None
+
+        for role in ROLES_ORDER:
+            # 1. Check for Category Change -> Insert Separator
+            this_cat = ROLE_TO_CAT_MAP[role]["cat"]
+            
+            if prev_cat and this_cat != prev_cat:
+                # Add Vertical Separator
+                sep = tk.Frame(self.grid_container, width=3, bg="#888")
+                sep.grid(row=0, column=current_col, rowspan=total_rows, sticky="ns", padx=2)
+                current_col += 1
+            
+            # 2. Draw Header
+            cat_data = ROLE_TO_CAT_MAP.get(role, {"color": "#ddd"})
+            tk.Label(self.grid_container, text=role, font=("Arial", 9, "bold"), fg=cat_data["color"], width=12, relief="solid").grid(row=0, column=current_col, padx=1)
+            
+            # 3. Draw Data Rows for this Role
+            for r, week in enumerate(self.engine.week_columns):
+                row_idx = r + 1
+                
+                # Draw Week Label only once (at col 0)
+                if role == ROLES_ORDER[0]: 
+                    tk.Label(self.grid_container, text=week, font=("Arial", 8), width=15, anchor="w").grid(row=row_idx, column=0, padx=1, pady=5)
+
                 cb = ttk.Combobox(self.grid_container, state="readonly", width=11)
                 draft = self.engine.initial_roster[week].get(role, "")
                 if draft: cb.set(draft)
                 cb.bind('<Button-1>', functools.partial(self.update_dropdown_options, week=week, role=role, widget=cb))
                 cb.bind('<<ComboboxSelected>>', self.on_selection_change)
-                cb.grid(row=row, column=c+1, padx=2)
+                
+                cb.grid(row=row_idx, column=current_col, padx=2)
                 self.combos[(week, role)] = cb
+
+            prev_cat = this_cat
+            current_col += 1
         
-        self.validate_all()
+        self.on_selection_change(None) 
 
     def update_dropdown_options(self, event, week, role, widget):
         capable = self.engine.availability_map[week][role]
@@ -318,8 +362,21 @@ class RosterApp(tk.Tk):
         widget['values'] = filtered
 
     def on_selection_change(self, event):
+        self.update_locks()
         self.validate_all()
         self.update_dashboard()
+
+    def update_locks(self):
+        for week in self.engine.week_columns:
+            if (week, "Piano") not in self.combos: continue
+            piano_val = self.combos[(week, "Piano")].get()
+            bass_combo = self.combos[(week, "Bass")]
+            if not piano_val:
+                bass_combo.set("")
+                bass_combo.state(["disabled"])
+            else:
+                bass_combo.state(["!disabled"])
+                bass_combo.config(state="readonly")
 
     def validate_all(self):
         for week in self.engine.week_columns:
@@ -334,17 +391,16 @@ class RosterApp(tk.Tk):
                 w = self.combos[(week, role)]
                 if w.get() and w.get() in dupes: w.config(foreground="red")
                 else: w.config(foreground="black")
+            
+            if not self.combos[(week, "Piano")].get() and self.combos[(week, "Bass")].get():
+                self.combos[(week, "Bass")].config(foreground="red")
 
-    # ==========================================
-    # VISUAL DASHBOARD (THE BIG UPDATE)
-    # ==========================================
     def update_dashboard(self):
         for w in self.dash_container.winfo_children(): w.destroy()
 
-        # 1. Map who is serving where for each week
-        # Structure: assigned_map[week][name] = "RoleName"
         assigned_map = {week: {} for week in self.engine.week_columns}
         serve_counts = {name: 0 for name in self.engine.all_members}
+        cleanup_counts = {opt: 0 for opt in CLEANUP_OPTIONS}
         
         for week in self.engine.week_columns:
             for role in ROLES_ORDER:
@@ -352,35 +408,27 @@ class RosterApp(tk.Tk):
                     name = self.combos[(week, role)].get()
                     if name:
                         assigned_map[week][name] = role
-                        if name in serve_counts: serve_counts[name] += 1
+                        if "Cleanup" in role:
+                            if name in cleanup_counts: cleanup_counts[name] += 1
+                        else:
+                            if name in serve_counts: serve_counts[name] += 1
 
-        # 2. Build Columns based on CATEGORY_CONFIG
         col_idx = 0
-        
         for cat_name, cat_data in CATEGORY_CONFIG.items():
-            # A. Category Header
             tk.Label(self.dash_container, text=cat_name, bg=cat_data["color"], fg=cat_data["text_col"], 
                      font=("Arial", 10, "bold"), relief="flat").grid(
-                         row=0, column=col_idx, columnspan=len(cat_data["roles"]), sticky="ew", padx=1, pady=(0, 0))
-            
-            # B. Role Sub-Headers & Member Lists
-            start_col = col_idx
+                         row=0, column=col_idx, columnspan=len(cat_data["roles"]), sticky="ew", padx=1)
             
             for role in cat_data["roles"]:
-                # Sub Header
                 tk.Label(self.dash_container, text=role, bg="#eee", font=("Arial", 8, "bold"), relief="solid").grid(
                     row=1, column=col_idx, sticky="ew", padx=0)
 
-                # Get Members capable of this role
                 members = []
-                
-                if cat_name == "LG": # Cleanup is special
+                if cat_name == "LG": 
                     for opt in CLEANUP_OPTIONS:
-                        members.append({"name": opt, "avail": "XXXX", "count": 0, "obj": None})
+                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt]})
                 else:
-                    # Find relevant members
                     for name, data in self.engine.all_members.items():
-                        # Check capability
                         has_cap = False
                         if "Usher" in role: has_cap = "Usher" in data["Roles"]
                         elif role in data["Roles"]: has_cap = True
@@ -389,70 +437,53 @@ class RosterApp(tk.Tk):
                             members.append({
                                 "name": name,
                                 "avail": data["AvailString"],
-                                "count": serve_counts.get(name, 0),
-                                "obj": data
+                                "count": serve_counts.get(name, 0)
                             })
-                    
-                    # Sort: Count Desc, then Name
                     members.sort(key=lambda x: (-x["count"], x["name"]))
 
-                # Render Members
                 row_idx = 2
                 for m in members:
                     self._render_member_cell(m, row_idx, col_idx, assigned_map)
                     row_idx += 1
-                
                 col_idx += 1
             
-            # Divider Column (Gap)
-            tk.Frame(self.dash_container, width=10, bg="white").grid(row=0, column=col_idx)
+            tk.Frame(self.dash_container, width=15, bg="white").grid(row=0, column=col_idx)
             col_idx += 1
 
     def _render_member_cell(self, m, row, col, assigned_map):
         container = tk.Frame(self.dash_container, bg="white", borderwidth=1, relief="solid")
-        container.grid(row=row, column=col, sticky="ew", padx=0, pady=0)
-        container.columnconfigure(1, weight=1) # Name expands
+        container.grid(row=row, column=col, sticky="ew")
+        container.columnconfigure(1, weight=1)
 
-        # 1. Color Logic based on count
         bg_col = "white"
-        if m["count"] >= 3: bg_col = "#ffcccc" # Red Burnout
-        elif m["count"] >= 1: bg_col = "#ffeeb0" # Orange Active
+        if m["count"] >= 3: bg_col = "#ffcccc"
+        elif m["count"] >= 1: bg_col = "#ffeeb0"
         
-        # 2. Name Label
         name_lbl = tk.Label(container, text=m["name"], bg=bg_col, font=("Arial", 8), anchor="w", width=10)
         name_lbl.pack(side=tk.LEFT, fill=tk.Y)
 
-        # 3. Status Indicators (The O/X circles)
         if m["name"] in CLEANUP_OPTIONS:
             tk.Label(container, text="----", bg=bg_col, font=("Arial", 8)).pack(side=tk.LEFT)
         else:
             status_frame = tk.Frame(container, bg=bg_col)
             status_frame.pack(side=tk.LEFT, padx=2)
-            
             for i, char in enumerate(m["avail"]):
-                color = "black" # Default Available
+                color = "black"
                 text = "O"
                 week_key = self.engine.week_columns[i]
-                
                 if char == "X":
-                    color = "#ccc" # Unavailable
-                    text = "X"
+                    color = "#ccc"; text = "X"
                 else:
-                    # Check if serving somewhere
                     if m["name"] in assigned_map[week_key]:
                         role_assigned = assigned_map[week_key][m["name"]]
-                        # Get Color of that role
                         cat_info = ROLE_TO_CAT_MAP.get(role_assigned)
-                        if cat_info:
-                            color = cat_info["color"]
+                        if cat_info: color = cat_info["color"]
                 
                 tk.Label(status_frame, text=text, fg=color, bg=bg_col, font=("Arial", 8, "bold"), width=1).pack(side=tk.LEFT)
 
-        # 4. Count Label
-        count_lbl = tk.Label(container, text=f"({m['count']})", bg=bg_col, font=("Arial", 8), width=3)
-        count_lbl.pack(side=tk.RIGHT)
+        tk.Label(container, text=f"({m['count']})", bg=bg_col, font=("Arial", 8), width=3).pack(side=tk.RIGHT)
 
-    def export_file(self):
+    def export_excel(self):
         if not self.engine.week_columns: return
         path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Files", "*.xlsx")])
         if not path: return
@@ -475,7 +506,174 @@ class RosterApp(tk.Tk):
             data.append(final_row)
 
         pd.DataFrame(data).to_excel(path, index=False)
-        messagebox.showinfo("Done", "Exported!")
+        messagebox.showinfo("Done", "Excel Exported!")
+
+    # ==========================================
+    # IMAGE EXPORT FUNCTION
+    # ==========================================
+    def export_image_cmd(self):
+        if not HAS_PIL:
+            messagebox.showerror("Error", "Pillow not installed.")
+            return
+        if not self.engine.week_columns: return
+        
+        path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Image", "*.png")])
+        if not path: return
+
+        assigned_map = {week: {} for week in self.engine.week_columns}
+        serve_counts = {name: 0 for name in self.engine.all_members}
+        cleanup_counts = {opt: 0 for opt in CLEANUP_OPTIONS}
+        
+        roster_data = {}
+        for week in self.engine.week_columns:
+            roster_data[week] = {}
+            for role in ROLES_ORDER:
+                val = self.combos[(week, role)].get()
+                roster_data[week][role] = val
+                if val:
+                    assigned_map[week][val] = role
+                    if "Cleanup" in role:
+                        if val in cleanup_counts: cleanup_counts[val] += 1
+                    else:
+                        if val in serve_counts: serve_counts[val] += 1
+
+        # --- DRAWING CONSTANTS ---
+        COL_W = 160
+        ROW_H = 30
+        MARGIN = 20
+        FONT_SIZE = 12
+        CAT_SPACER = 10
+        
+        roster_w = COL_W * (len(ROLES_ORDER) + 1)
+        dash_w = 0
+        for cat, data in CATEGORY_CONFIG.items():
+            dash_w += (len(data["roles"]) * COL_W) + CAT_SPACER
+        dash_w -= CAT_SPACER 
+        
+        img_w = max(roster_w, dash_w) + (MARGIN * 2)
+        
+        max_mem_rows = 0
+        for cat, data in CATEGORY_CONFIG.items():
+            for role in data["roles"]:
+                c = 0
+                if cat == "LG": c = len(CLEANUP_OPTIONS)
+                else:
+                    for _, d in self.engine.all_members.items():
+                        if "Usher" in role and "Usher" in d["Roles"]: c+=1
+                        elif role in d["Roles"]: c+=1
+                max_mem_rows = max(max_mem_rows, c)
+        
+        roster_h = ROW_H * (len(self.engine.week_columns) + 2) 
+        dash_h = ROW_H * (max_mem_rows + 3)
+        img_h = roster_h + 60 + dash_h + (MARGIN * 2)
+        
+        img = Image.new("RGB", (img_w, img_h), "white")
+        draw = ImageDraw.Draw(img)
+        
+        try:
+            font = ImageFont.truetype("arial.ttf", FONT_SIZE)
+            font_bold = ImageFont.truetype("arialbd.ttf", FONT_SIZE)
+        except:
+            font = ImageFont.load_default()
+            font_bold = font
+
+        # DRAW ROSTER
+        roster_start_x = (img_w - roster_w) // 2
+        y = MARGIN
+        x = roster_start_x
+        
+        x_curs = x + COL_W
+        for cat_name, cat_data in CATEGORY_CONFIG.items():
+            w = len(cat_data["roles"]) * COL_W
+            draw.rectangle([x_curs, y, x_curs+w, y+ROW_H], fill="white", outline="black")
+            text_len = draw.textlength(cat_name, font=font_bold)
+            draw.text((x_curs + (w-text_len)/2, y+5), cat_name, fill=cat_data["color"], font=font_bold)
+            x_curs += w
+        y += ROW_H
+        
+        draw.rectangle([x, y, x+COL_W, y+ROW_H], outline="black") 
+        x_curs = x + COL_W
+        for role in ROLES_ORDER:
+            draw.rectangle([x_curs, y, x_curs+COL_W, y+ROW_H], outline="black", fill="#f0f0f0")
+            draw.text((x_curs+5, y+5), role, fill="black", font=font_bold)
+            x_curs += COL_W
+        y += ROW_H
+        
+        for week in self.engine.week_columns:
+            draw.rectangle([x, y, x+COL_W, y+ROW_H], outline="black")
+            draw.text((x+5, y+5), week, fill="black", font=font)
+            x_curs = x + COL_W
+            for role in ROLES_ORDER:
+                val = roster_data[week][role]
+                draw.rectangle([x_curs, y, x_curs+COL_W, y+ROW_H], outline="black")
+                if val: draw.text((x_curs+5, y+5), val, fill="black", font=font)
+                x_curs += COL_W
+            y += ROW_H
+
+        # DRAW DASHBOARD
+        y += 60
+        x = (img_w - dash_w) // 2
+        x_curs = x
+        
+        for cat_name, cat_data in CATEGORY_CONFIG.items():
+            width = len(cat_data["roles"]) * COL_W
+            draw.rectangle([x_curs, y, x_curs+width, y+ROW_H], fill=cat_data["color"], outline="black")
+            draw.text((x_curs+5, y+5), cat_name, fill=cat_data["text_col"], font=font_bold)
+            
+            role_x = x_curs
+            for role in cat_data["roles"]:
+                draw.rectangle([role_x, y+ROW_H, role_x+COL_W, y+(ROW_H*2)], fill="#eee", outline="black")
+                draw.text((role_x+5, y+ROW_H+5), role, fill="black", font=font_bold)
+                
+                members = []
+                if cat_name == "LG":
+                    for opt in CLEANUP_OPTIONS:
+                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt]})
+                else:
+                    for name, d in self.engine.all_members.items():
+                        has_cap = False
+                        if "Usher" in role: has_cap = "Usher" in d["Roles"]
+                        elif role in d["Roles"]: has_cap = True
+                        if has_cap:
+                            members.append({"name": name, "avail": d["AvailString"], "count": serve_counts.get(name, 0)})
+                    members.sort(key=lambda x: (-x["count"], x["name"]))
+                
+                mem_y = y + (ROW_H*2)
+                for m in members:
+                    bg = "white"
+                    if m["count"] >= 3: bg = "#ffcccc"
+                    elif m["count"] >= 1: bg = "#ffeeb0"
+                    
+                    draw.rectangle([role_x, mem_y, role_x+COL_W, mem_y+ROW_H], fill=bg, outline="black")
+                    draw.text((role_x+5, mem_y+5), m["name"], fill="black", font=font)
+                    
+                    # RIGHT ALIGN COUNT
+                    count_text = f"({m['count']})"
+                    c_len = draw.textlength(count_text, font=font)
+                    count_x = role_x + COL_W - c_len - 5
+                    draw.text((count_x, mem_y+5), count_text, fill="black", font=font)
+                    
+                    # DOTS LEFT OF COUNT
+                    if cat_name != "LG":
+                        dot_block_w = 45
+                        dot_start_x = count_x - dot_block_w
+                        for i, char in enumerate(m["avail"]):
+                            color = "black"
+                            if char == "X": color = "#ccc"
+                            else:
+                                wk = self.engine.week_columns[i]
+                                if m["name"] in assigned_map[wk]:
+                                    assigned_role = assigned_map[wk][m["name"]]
+                                    c_info = ROLE_TO_CAT_MAP.get(assigned_role)
+                                    if c_info: color = c_info["color"]
+                            draw.text((dot_start_x + (i*11), mem_y+5), char, fill=color, font=font_bold)
+                    
+                    mem_y += ROW_H
+                role_x += COL_W
+            x_curs += width + CAT_SPACER
+        
+        img.save(path)
+        messagebox.showinfo("Success", "Image Exported!")
 
 if __name__ == "__main__":
     app = RosterApp()

@@ -9,6 +9,7 @@ Auto-Roster Pro is a desktop application designed to automate and manage the sch
 *   **Interactive Grid**: Easy-to-use grid for manual adjustments with smart dropdowns that only show available members for a specific role and week.
 *   **Conflict Detection**: Highlights duplicate assignments to prevent scheduling errors.
 *   **Excel Integration**: Seamlessly loads member data from Excel and exports the final roster to Excel.
+*   **Image Export**: Generate a shareable PNG image of the roster and dashboard for easy distribution.
 *   **Role Management**: Supports various roles including Lead, Vocal, Piano, Drums, Bass, Guitar, PPT, Sound, MC, Ushers, and Cleanup crews.
 
 ## Prerequisites
@@ -34,7 +35,7 @@ Auto-Roster Pro is a desktop application designed to automate and manage the sch
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: If `requirements.txt` is missing, install manually: `pip install pandas openpyxl pyinstaller`)*
+    *(Note: If `requirements.txt` is missing, install manually: `pip install pandas openpyxl pyinstaller Pillow`)*
 
 ## Usage
 
@@ -55,7 +56,8 @@ python main.py
     *   The **Input Grid** (top) shows the generated roster. You can manually change assignments using the dropdowns.
     *   The **Dashboard** (bottom) updates in real-time to show who is serving, their total load, and availability.
 3.  **Clear Grid**: Use **"2. Clear Grid"** if you want to start fresh or reset selections.
-4.  **Export**: Click **"3. Export"** to save the finalized roster as a new Excel file.
+4.  **Export Excel**: Click **"3. Export Excel"** to save the finalized roster as a new Excel file.
+5.  **Export Image**: Click **"4. Export Image"** to save a visual snapshot of the roster and dashboard as a PNG file.
 
 ### Input File Format
 
@@ -70,7 +72,7 @@ The application expects an Excel file (`.xlsx`) with specific columns:
 
 ## Executable
 
-The standalone `.exe` file for Windows is located in the `dist/` folder.
+The standalone `.exe` file for Windows is located in the `root` folder.
 
 ## Configuration
 

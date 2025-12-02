@@ -215,7 +215,7 @@ class RosterEngine:
 class RosterApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Auto-Roster Pro (Visual Dashboard)")
+        self.title("Auto-Roster Pro (Final Fix)")
         self.geometry("1600x900")
         self.engine = RosterEngine()
         self.combos = {} 
@@ -301,36 +301,26 @@ class RosterApp(tk.Tk):
 
         total_rows = len(self.engine.week_columns) + 1
 
-        # -- HEADER ROW --
-        # Col 0: Week Text
         tk.Label(self.grid_container, text="Week", font=("Arial", 9, "bold"), width=15, relief="solid").grid(row=0, column=0, padx=1, sticky="ns")
-        
-        # Col 1: Vertical Bar (NEW ADDITION)
         sep_main = tk.Frame(self.grid_container, width=3, bg="#888")
         sep_main.grid(row=0, column=1, rowspan=total_rows, sticky="ns", padx=2)
 
-        current_col = 2 # Start after the separator
+        current_col = 2
         prev_cat = None
 
         for role in ROLES_ORDER:
-            # 1. Check for Category Change -> Insert Separator
             this_cat = ROLE_TO_CAT_MAP[role]["cat"]
             
             if prev_cat and this_cat != prev_cat:
-                # Add Vertical Separator
                 sep = tk.Frame(self.grid_container, width=3, bg="#888")
                 sep.grid(row=0, column=current_col, rowspan=total_rows, sticky="ns", padx=2)
                 current_col += 1
             
-            # 2. Draw Header
             cat_data = ROLE_TO_CAT_MAP.get(role, {"color": "#ddd"})
             tk.Label(self.grid_container, text=role, font=("Arial", 9, "bold"), fg=cat_data["color"], width=12, relief="solid").grid(row=0, column=current_col, padx=1)
             
-            # 3. Draw Data Rows for this Role
             for r, week in enumerate(self.engine.week_columns):
                 row_idx = r + 1
-                
-                # Draw Week Label only once (at col 0)
                 if role == ROLES_ORDER[0]: 
                     tk.Label(self.grid_container, text=week, font=("Arial", 8), width=15, anchor="w").grid(row=row_idx, column=0, padx=1, pady=5)
 
@@ -339,7 +329,6 @@ class RosterApp(tk.Tk):
                 if draft: cb.set(draft)
                 cb.bind('<Button-1>', functools.partial(self.update_dropdown_options, week=week, role=role, widget=cb))
                 cb.bind('<<ComboboxSelected>>', self.on_selection_change)
-                
                 cb.grid(row=row_idx, column=current_col, padx=2)
                 self.combos[(week, role)] = cb
 
@@ -402,6 +391,9 @@ class RosterApp(tk.Tk):
         serve_counts = {name: 0 for name in self.engine.all_members}
         cleanup_counts = {opt: 0 for opt in CLEANUP_OPTIONS}
         
+        member_active_roles = {name: set() for name in self.engine.all_members}
+        cleanup_active_roles = {opt: set() for opt in CLEANUP_OPTIONS}
+
         for week in self.engine.week_columns:
             for role in ROLES_ORDER:
                 if (week, role) in self.combos:
@@ -409,9 +401,13 @@ class RosterApp(tk.Tk):
                     if name:
                         assigned_map[week][name] = role
                         if "Cleanup" in role:
-                            if name in cleanup_counts: cleanup_counts[name] += 1
+                            if name in cleanup_counts: 
+                                cleanup_counts[name] += 1
+                                cleanup_active_roles[name].add(role)
                         else:
-                            if name in serve_counts: serve_counts[name] += 1
+                            if name in serve_counts: 
+                                serve_counts[name] += 1
+                                member_active_roles[name].add(role)
 
         col_idx = 0
         for cat_name, cat_data in CATEGORY_CONFIG.items():
@@ -426,7 +422,12 @@ class RosterApp(tk.Tk):
                 members = []
                 if cat_name == "LG": 
                     for opt in CLEANUP_OPTIONS:
-                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt]})
+                        is_active = role in cleanup_active_roles.get(opt, set())
+                        s_val = 2
+                        if is_active:
+                            if cleanup_counts[opt] >= 3: s_val = 0
+                            elif cleanup_counts[opt] >= 1: s_val = 1
+                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt], "is_active": is_active, "sort_val": s_val})
                 else:
                     for name, data in self.engine.all_members.items():
                         has_cap = False
@@ -434,12 +435,22 @@ class RosterApp(tk.Tk):
                         elif role in data["Roles"]: has_cap = True
                         
                         if has_cap:
+                            is_active = role in member_active_roles.get(name, set())
+                            cnt = serve_counts.get(name, 0)
+                            s_val = 2
+                            if is_active:
+                                if cnt >= 3: s_val = 0
+                                elif cnt >= 1: s_val = 1
+                            
                             members.append({
                                 "name": name,
                                 "avail": data["AvailString"],
-                                "count": serve_counts.get(name, 0)
+                                "count": cnt,
+                                "is_active": is_active,
+                                "sort_val": s_val
                             })
-                    members.sort(key=lambda x: (-x["count"], x["name"]))
+                
+                members.sort(key=lambda x: (x["sort_val"], -x["count"], x["name"]))
 
                 row_idx = 2
                 for m in members:
@@ -456,8 +467,9 @@ class RosterApp(tk.Tk):
         container.columnconfigure(1, weight=1)
 
         bg_col = "white"
-        if m["count"] >= 3: bg_col = "#ffcccc"
-        elif m["count"] >= 1: bg_col = "#ffeeb0"
+        if m["is_active"]:
+            if m["count"] >= 3: bg_col = "#ffcccc"
+            elif m["count"] >= 1: bg_col = "#ffeeb0"
         
         name_lbl = tk.Label(container, text=m["name"], bg=bg_col, font=("Arial", 8), anchor="w", width=10)
         name_lbl.pack(side=tk.LEFT, fill=tk.Y)
@@ -509,7 +521,7 @@ class RosterApp(tk.Tk):
         messagebox.showinfo("Done", "Excel Exported!")
 
     # ==========================================
-    # IMAGE EXPORT FUNCTION
+    # IMAGE EXPORT
     # ==========================================
     def export_image_cmd(self):
         if not HAS_PIL:
@@ -524,6 +536,9 @@ class RosterApp(tk.Tk):
         serve_counts = {name: 0 for name in self.engine.all_members}
         cleanup_counts = {opt: 0 for opt in CLEANUP_OPTIONS}
         
+        member_active_roles = {name: set() for name in self.engine.all_members}
+        cleanup_active_roles = {opt: set() for opt in CLEANUP_OPTIONS}
+
         roster_data = {}
         for week in self.engine.week_columns:
             roster_data[week] = {}
@@ -533,11 +548,15 @@ class RosterApp(tk.Tk):
                 if val:
                     assigned_map[week][val] = role
                     if "Cleanup" in role:
-                        if val in cleanup_counts: cleanup_counts[val] += 1
+                        if val in cleanup_counts: 
+                            cleanup_counts[val] += 1
+                            cleanup_active_roles[val].add(role)
                     else:
-                        if val in serve_counts: serve_counts[val] += 1
+                        if val in serve_counts: 
+                            serve_counts[val] += 1
+                            member_active_roles[val].add(role)
 
-        # --- DRAWING CONSTANTS ---
+        # --- DRAWING ---
         COL_W = 160
         ROW_H = 30
         MARGIN = 20
@@ -628,23 +647,43 @@ class RosterApp(tk.Tk):
                 members = []
                 if cat_name == "LG":
                     for opt in CLEANUP_OPTIONS:
-                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt]})
+                        is_active = role in cleanup_active_roles.get(opt, set())
+                        s_val = 2
+                        if is_active:
+                            if cleanup_counts[opt] >= 3: s_val = 0
+                            elif cleanup_counts[opt] >= 1: s_val = 1
+                        members.append({"name": opt, "avail": "XXXX", "count": cleanup_counts[opt], "is_active": is_active, "sort_val": s_val})
                 else:
                     for name, d in self.engine.all_members.items():
                         has_cap = False
                         if "Usher" in role: has_cap = "Usher" in d["Roles"]
                         elif role in d["Roles"]: has_cap = True
                         if has_cap:
-                            members.append({"name": name, "avail": d["AvailString"], "count": serve_counts.get(name, 0)})
-                    members.sort(key=lambda x: (-x["count"], x["name"]))
+                            is_active = role in member_active_roles.get(name, set())
+                            cnt = serve_counts.get(name, 0)
+                            s_val = 2
+                            if is_active:
+                                if cnt >= 3: s_val = 0
+                                elif cnt >= 1: s_val = 1
+                            members.append({
+                                "name": name, 
+                                "avail": d["AvailString"], 
+                                "count": cnt,
+                                "is_active": is_active,
+                                "sort_val": s_val
+                            })
+                
+                members.sort(key=lambda x: (x["sort_val"], -x["count"], x["name"]))
                 
                 mem_y = y + (ROW_H*2)
                 for m in members:
                     bg = "white"
-                    if m["count"] >= 3: bg = "#ffcccc"
-                    elif m["count"] >= 1: bg = "#ffeeb0"
+                    if m["is_active"]:
+                        if m["count"] >= 3: bg = "#ffcccc"
+                        elif m["count"] >= 1: bg = "#ffeeb0"
                     
                     draw.rectangle([role_x, mem_y, role_x+COL_W, mem_y+ROW_H], fill=bg, outline="black")
+                    
                     draw.text((role_x+5, mem_y+5), m["name"], fill="black", font=font)
                     
                     # RIGHT ALIGN COUNT

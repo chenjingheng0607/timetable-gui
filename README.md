@@ -20,7 +20,7 @@ Auto-Roster Pro is a desktop application designed to automate and manage the sch
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/chenjingheng0607/timetable-gui.git
     cd timetable-gui
     ```
 

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QLabel, QScrollArea, 
                                QFrame, QFileDialog, QMessageBox, QComboBox, 
                                QGridLayout, QSizePolicy, QSplitter)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon
 
 # Image Generation Library
@@ -109,6 +109,7 @@ class RosterEngine:
 
     def load_file(self, filepath):
         try:
+            # First pass: find header
             df_raw = pd.read_excel(filepath, header=None, keep_default_na=False)
             header_row = -1
             for i, row in df_raw.iterrows():
@@ -119,6 +120,7 @@ class RosterEngine:
             
             if header_row == -1: return False, "Could not find 'Name' column."
             
+            # Second pass: read data
             self.df = pd.read_excel(filepath, header=header_row, keep_default_na=False)
             self.df.columns = self.df.columns.astype(str).str.replace('\n', ' ').str.strip()
             
@@ -135,8 +137,10 @@ class RosterEngine:
         
         fwt_col, fph_col, fmc_col, fut_col = None, None, None, None
         
+        # Optimize column finding
         def check_col(name, keys):
-            if any(k in str(name).upper() for k in keys): return True
+            name_upper = str(name).upper()
+            if any(k in name_upper for k in keys): return True
             if not self.df.empty:
                 val = str(self.df[name].iloc[0]).upper()
                 if any(k in val for k in keys): return True
@@ -203,6 +207,7 @@ class RosterEngine:
             for w_idx, week in enumerate(self.week_columns):
                 if avail_str[w_idx] == "O":
                     for r in ROLES_ORDER:
+                        # Direct assignment optimization
                         if "Usher" in r:
                             if "Usher" in caps: self.availability_map[week][r].append(name)
                         elif r in caps:
@@ -214,7 +219,7 @@ class RosterEngine:
         last_week_played = {name: -1 for name in self.df['Name']}
         
         for w_idx, week in enumerate(self.week_columns):
-            assigned_this_week = [] 
+            assigned_this_week = set() # Use set for O(1) lookups
             sorted_roles = sorted(ROLES_ORDER, key=lambda r: len(self.availability_map[week][r]))
             
             for role in sorted_roles:
@@ -225,17 +230,18 @@ class RosterEngine:
                     if "Cleanup" in role:
                         winner = candidates[0]
                         self.initial_roster[week][role] = winner
-                        assigned_this_week.append(winner)
+                        assigned_this_week.add(winner)
                     else:
                         candidates.sort(key=lambda p: (burnout.get(p, 0) * 10) + (50 if last_week_played.get(p) == (w_idx - 1) else 0))
                         winner = candidates[0]
                         self.initial_roster[week][role] = winner
-                        assigned_this_week.append(winner)
+                        assigned_this_week.add(winner)
                         burnout[winner] = burnout.get(winner, 0) + 1
                         last_week_played[winner] = w_idx
                 else:
                     self.initial_roster[week][role] = ""
 
+            # Piano/Bass Logic
             if not self.initial_roster[week].get("Piano"):
                 if self.initial_roster[week].get("Bass"):
                     bassist = self.initial_roster[week]["Bass"]
@@ -267,6 +273,12 @@ class RosterApp(QMainWindow):
         self.combos = {} 
         self.current_theme = "Dark" 
         
+        # Debounce Timer for Dashboard Updates to improve performance
+        self.update_timer = QTimer()
+        self.update_timer.setSingleShot(True)
+        self.update_timer.setInterval(80) # 80ms delay
+        self.update_timer.timeout.connect(self._perform_dashboard_update)
+
         # Style
         QApplication.setStyle("Fusion")
         
@@ -276,6 +288,16 @@ class RosterApp(QMainWindow):
         self.apply_theme(self.current_theme)
 
     def apply_theme(self, theme_name):
+        # Save current state before rebuilding
+        saved_state = {}
+        if hasattr(self, 'combos') and self.combos:
+            for key, cb in self.combos.items():
+                saved_state[key] = cb.currentText()
+        
+        saved_status = "No file loaded"
+        if hasattr(self, 'lbl_status'):
+            saved_status = self.lbl_status.text()
+
         self.current_theme = theme_name
         t = THEMES[theme_name]
         
@@ -339,17 +361,36 @@ class RosterApp(QMainWindow):
         self.setStyleSheet(css)
         self._build_ui() # Rebuild to apply new styles/colors to dynamic elements
         
+        # Restore Status
+        if hasattr(self, 'lbl_status'):
+            self.lbl_status.setText(saved_status)
+            if "Loaded:" in saved_status:
+                self.lbl_status.setStyleSheet("color: #4CAF50; margin-left: 10px;")
+            else:
+                self.lbl_status.setStyleSheet("color: red; margin-left: 10px;")
+
         if self.engine.week_columns:
             self.render_roster_grid()
-            self.update_dashboard()
+            
+            # Restore state
+            for key, val in saved_state.items():
+                if key in self.combos:
+                    cb = self.combos[key]
+                    cb.blockSignals(True)
+                    # Use setItemText or check if in model? 
+                    # Simpler to just add it if missing (though it should be valid) and set it.
+                    if val and cb.findText(val) == -1:
+                        cb.addItem(val)
+                    cb.setCurrentText(val)
+                    cb.blockSignals(False)
+
+            self.trigger_dashboard_update()
 
     def toggle_theme(self):
         new = "Light" if self.current_theme == "Dark" else "Dark"
         self.apply_theme(new)
 
     def _build_ui(self):
-        # Save previous scroll positions? Complex, skip for now.
-        
         # Clear central widget
         if self.centralWidget():
             self.centralWidget().deleteLater()
@@ -433,7 +474,6 @@ class RosterApp(QMainWindow):
         self.scroll_d = QScrollArea()
         self.scroll_d.setWidgetResizable(True)
         self.dash_container = QWidget()
-        # Ensure dash container matches bg
         self.dash_container.setStyleSheet(f"background-color: {t['bg_main']};")
         self.dash_layout_grid = QGridLayout(self.dash_container)
         self.dash_layout_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -456,7 +496,7 @@ class RosterApp(QMainWindow):
             self.lbl_status.setStyleSheet("color: #4CAF50; margin-left: 10px;") # Green always ok
             self.engine.generate_draft()
             self.render_roster_grid()
-            self.update_dashboard()
+            self.trigger_dashboard_update()
         else:
             QMessageBox.critical(self, "Error", msg)
 
@@ -538,7 +578,7 @@ class RosterApp(QMainWindow):
             prev_cat = this_cat
             current_col += 1
         
-        self.on_selection_change(None)
+        self.trigger_dashboard_update()
 
     def update_dropdown_options(self, week, role, widget):
         capable = self.engine.availability_map[week][role]
@@ -568,7 +608,11 @@ class RosterApp(QMainWindow):
     def on_selection_change(self, text=None):
         self.update_locks()
         self.validate_all()
-        self.update_dashboard()
+        # Debounced update
+        self.trigger_dashboard_update()
+
+    def trigger_dashboard_update(self):
+        self.update_timer.start()
 
     def update_locks(self):
         for week in self.engine.week_columns:
@@ -584,6 +628,7 @@ class RosterApp(QMainWindow):
     def validate_all(self):
         t = THEMES[self.current_theme]
         normal_col = t['fg_pri']
+        bg = t['input_bg']
         for week in self.engine.week_columns:
             seen = {}
             dupes = []
@@ -595,17 +640,16 @@ class RosterApp(QMainWindow):
             for role in ROLES_ORDER:
                 w = self.combos[(week, role)]
                 txt = w.currentText()
-                # Basic styling reset via stylesheet? No, modify specific styling
-                # Using QSS for specific widget override
                 if txt and txt in dupes: 
-                     w.setStyleSheet(f"color: red; background-color: {t['input_bg']};")
+                     w.setStyleSheet(f"color: red; background-color: {bg};")
                 else:
-                     w.setStyleSheet(f"color: {normal_col}; background-color: {t['input_bg']};")
+                     w.setStyleSheet(f"color: {normal_col}; background-color: {bg};")
             
             if not self.combos[(week, "Piano")].currentText() and self.combos[(week, "Bass")].currentText():
-                 self.combos[(week, "Bass")].setStyleSheet(f"color: red; background-color: {t['input_bg']};")
+                 self.combos[(week, "Bass")].setStyleSheet(f"color: red; background-color: {bg};")
 
-    def update_dashboard(self):
+    def _perform_dashboard_update(self):
+        # Actual Dashboard Logic
         # Clear
         while self.dash_layout_grid.count():
             item = self.dash_layout_grid.takeAt(0)
@@ -778,8 +822,7 @@ class RosterApp(QMainWindow):
         QMessageBox.information(self, "Done", "Excel Exported!")
 
     # ==========================================
-    # IMAGE EXPORT (Keep Light Theme for Image?)
-    # Usually exports look best in Light Theme standard
+    # IMAGE EXPORT
     # ==========================================
     def export_image_cmd(self):
         if not HAS_PIL:

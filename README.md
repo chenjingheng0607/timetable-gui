@@ -1,6 +1,6 @@
-# Auto-Roster Pro (Timetable GUI)
+# Auto-Roster (Timetable GUI)
 
-Auto-Roster Pro is a desktop application designed to automate and manage the scheduling of rosters for teams, specifically tailored for church worship teams or similar volunteer groups. It provides a visual interface to generate, edit, and export rosters while managing member availability and preventing burnout.
+Auto-Roster is a desktop application designed to automate and manage the scheduling of rosters for teams, specifically tailored for church worship teams or similar volunteer groups. It provides a visual interface to generate, edit, and export rosters while managing member availability and preventing burnout.
 
 ## Features
 

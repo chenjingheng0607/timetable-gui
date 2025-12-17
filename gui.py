@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QPushButton, QLabel, QScrollArea, QFrame, 
                                QFileDialog, QMessageBox, QComboBox, QGridLayout, QSplitter)
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QIcon
 
 from config import *
 from logic import RosterEngine
@@ -31,7 +31,8 @@ class EnhancedComboBox(QComboBox):
 class RosterApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Auto-Roster Pro")
+        self.setWindowTitle("Auto-Roster")
+        self.setWindowIcon(QIcon("FirelightLogo.png"))
         self.resize(1600, 900)
         self.engine = RosterEngine()
         self.combos = {} 

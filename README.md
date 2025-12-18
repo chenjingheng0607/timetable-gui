@@ -72,4 +72,4 @@ Configuration is handled in `config.py` (not main.py). You can adjust:
 To build a standalone `.exe` using `nuitka`:
 
 ```bash
-nuitka --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=FirelightLogo.png --lto=yes --remove-output --include-qt-plugins=platforms,styles --nofollow-import-to=PySide6.QtNetwork --nofollow-import-to=PySide6.QtSql main.py```
+nuitka --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=FirelightLogo.png --lto=yes --remove-output --include-qt-plugins=platforms,styles --nofollow-import-to=PySide6.QtNetwork --nofollow-import-to=PySide6.QtSql main.py

@@ -1,8 +1,8 @@
 # config.py
 
 # ROLES CONFIGURATION
-ROLES_ORDER = [
-    "MD", "Lead", "Vocal", "Piano", "Drum/Cajon", "Bass", "Guitar", 
+ROLES_ORDER =[
+    "MD", "Lead", "Vocal 1", "Vocal 2", "Piano", "Drum/Cajon", "Bass", "Guitar", 
     "PPT", "Sound", "Lighting/OBS", 
     "MC", 
     "Usher 1", "Usher 2", "Usher 3", 
@@ -10,10 +10,10 @@ ROLES_ORDER = [
 ]
 
 # Roles that are eligible to be MD
-BAND_ROLES = ["Piano", "Bass", "Guitar"]
+BAND_ROLES =["Piano", "Bass", "Guitar"]
 
 # Fixed Options for Cleanup
-CLEANUP_OPTIONS = ["LHW", "UF", "LB", "YGSS", "SJS", "PK"]
+CLEANUP_OPTIONS =["LHW", "UF", "LB", "YGSS", "SJS", "PK"]
 
 # Excel Code Mapping
 INSTRUMENT_MAP = {
@@ -28,11 +28,11 @@ INSTRUMENT_MAP = {
 # DASHBOARD CATEGORIES & COLORS
 CATEGORY_CONFIG = {
     "Praise & Worship": {
-        "roles": ["MD", "Lead", "Vocal", "Piano", "Drum/Cajon", "Bass", "Guitar"],
+        "roles":["MD", "Lead", "Vocal 1", "Vocal 2", "Piano", "Drum/Cajon", "Bass", "Guitar"],
         "color": "#c00000", "text_col": "white"
     },
     "FPH": {
-        "roles": ["PPT", "Sound", "Lighting/OBS"], 
+        "roles":["PPT", "Sound", "Lighting/OBS"], 
         "color": "#0070c0", "text_col": "white"
     },
     "MC": {
@@ -40,7 +40,7 @@ CATEGORY_CONFIG = {
         "color": "#7030a0", "text_col": "white"
     },
     "Usher": {
-        "roles": ["Usher 1", "Usher 2", "Usher 3"],
+        "roles":["Usher 1", "Usher 2", "Usher 3"],
         "color": "#ffc000", "text_col": "black"
     },
     "LG": {

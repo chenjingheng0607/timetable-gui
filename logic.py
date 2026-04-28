@@ -6,7 +6,7 @@ from config import *
 class RosterEngine:
     def __init__(self):
         self.df = None
-        self.week_columns = []
+        self.week_columns =[]
         self.availability_map = {} 
         self.initial_roster = {}   
         self.all_members = {} 
@@ -51,10 +51,10 @@ class RosterEngine:
             if check_col(c, ["FWT", "WORSHIP"]): fwt_col = c
             elif check_col(c, ["FPH", "PRODUCTION", "HUB"]): fph_col = c
             elif check_col(c, ["FMC", "MC"]): fmc_col = c
-            elif check_col(c, ["FUT", "USHER"]): fut_col = c
+            elif check_col(c,["FUT", "USHER"]): fut_col = c
 
-        self.week_columns = [c for c in cols if "Week" in c]
-        self.availability_map = {week: {role: [] for role in ROLES_ORDER} for week in self.week_columns}
+        self.week_columns =[c for c in cols if "Week" in c]
+        self.availability_map = {week: {role:[] for role in ROLES_ORDER} for week in self.week_columns}
 
         for week in self.week_columns:
             self.availability_map[week]["Cleanup 1"] = CLEANUP_OPTIONS.copy()
@@ -66,7 +66,7 @@ class RosterEngine:
 
         def get_capabilities(row):
             raw = str(row[inst_col]).upper().replace("\n", ",").replace("/", ",").replace("(", "").replace(")", "")
-            caps = []
+            caps =[]
             for code in [x.strip() for x in raw.split(',')]:
                 if code in INSTRUMENT_MAP: caps.append(INSTRUMENT_MAP[code])
                 elif "PPT" in code: caps.append("PPT")
@@ -113,6 +113,8 @@ class RosterEngine:
                         if r == "MD": continue
                         if "Usher" in r:
                             if "Usher" in clean_caps: self.availability_map[week][r].append(display_name)
+                        elif "Vocal" in r:
+                            if "Vocal" in clean_caps: self.availability_map[week][r].append(display_name)
                         elif r in clean_caps:
                             self.availability_map[week][r].append(display_name)
 
@@ -158,7 +160,7 @@ class RosterEngine:
             md_candidate = ""
             for role in BAND_ROLES:
                 person = self.initial_roster[week].get(role, "")
-                if person and "MD" in self.all_members.get(person, {}).get("Roles", []):
+                if person and "MD" in self.all_members.get(person, {}).get("Roles",[]):
                     md_candidate = person
                     break
             self.initial_roster[week]["MD"] = md_candidate

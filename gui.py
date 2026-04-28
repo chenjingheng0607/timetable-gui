@@ -1,5 +1,6 @@
 # gui.py
 import os
+import json
 import functools
 import pandas as pd
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -73,8 +74,10 @@ class RosterApp(QMainWindow):
         self._build_ui() 
         
         self.lbl_status.setText(saved_status)
-        if "Loaded:" in saved_status:
+        # BUG FIX: Changed "Loaded:" to "Loaded" to successfully match "Loaded Excel" and "Loaded State"
+        if "Loaded" in saved_status:
             self.lbl_status.setStyleSheet("color: #4CAF50; margin-left: 10px;")
+            
         if self.engine.week_columns:
             self.render_roster_grid()
             for key, val in saved_state.items():
@@ -97,17 +100,21 @@ class RosterApp(QMainWindow):
         top = QFrame()
         top_l = QHBoxLayout(top)
         
-        btn_load = QPushButton("1. Load Excel"); btn_load.clicked.connect(self.load_file)
+        btn_load = QPushButton("Load Excel"); btn_load.clicked.connect(self.load_file)
+        btn_save = QPushButton("Save State"); btn_save.clicked.connect(self.save_state)
+        btn_load_s = QPushButton("Load State"); btn_load_s.clicked.connect(self.load_state)
+        
         self.lbl_status = QLabel("No file loaded"); self.lbl_status.setStyleSheet("color: red; margin-left: 10px;")
         
-        top_l.addWidget(btn_load); top_l.addWidget(self.lbl_status); top_l.addStretch()
+        top_l.addWidget(btn_load); top_l.addWidget(btn_save); top_l.addWidget(btn_load_s)
+        top_l.addWidget(self.lbl_status); top_l.addStretch()
         
+        btn_clear = QPushButton("Clear"); btn_clear.clicked.connect(self.clear_grid)
+        btn_ex_xl = QPushButton("Export Excel"); btn_ex_xl.clicked.connect(self.export_excel)
+        btn_ex_img = QPushButton("Export Image"); btn_ex_img.clicked.connect(self.export_image_cmd)
         btn_theme = QPushButton(f"Theme: {self.current_theme}"); btn_theme.clicked.connect(self.toggle_theme)
-        btn_clear = QPushButton("2. Clear"); btn_clear.clicked.connect(self.clear_grid)
-        btn_ex_xl = QPushButton("3. Export Excel"); btn_ex_xl.clicked.connect(self.export_excel)
-        btn_ex_img = QPushButton("4. Export Image"); btn_ex_img.clicked.connect(self.export_image_cmd)
         
-        for b in [btn_theme, btn_clear, btn_ex_xl, btn_ex_img]: top_l.addWidget(b)
+        for b in[btn_clear, btn_ex_xl, btn_ex_img, btn_theme]: top_l.addWidget(b)
 
         central = QWidget(); self.setCentralWidget(central)
         main_l = QVBoxLayout(central); main_l.setContentsMargins(0,0,0,0); main_l.addWidget(top)
@@ -139,13 +146,62 @@ class RosterApp(QMainWindow):
         if not path: return
         success, msg = self.engine.load_file(path)
         if success:
-            self.lbl_status.setText(f"Loaded: {os.path.basename(path)}")
+            self.lbl_status.setText(f"Loaded Excel: {os.path.basename(path)}")
             self.lbl_status.setStyleSheet("color: #4CAF50; margin-left: 10px;")
             self.engine.generate_draft()
             self.render_roster_grid()
             self.trigger_dashboard_update()
         else:
             QMessageBox.critical(self, "Error", msg)
+
+    def save_state(self):
+        if not self.engine.week_columns:
+            QMessageBox.warning(self, "Warning", "No active data to save.")
+            return
+            
+        path, _ = QFileDialog.getSaveFileName(self, "Save State", "roster_state.json", "JSON Files (*.json)")
+        if not path: return
+        
+        data = {
+            "week_columns": self.engine.week_columns,
+            "all_members": self.engine.all_members,
+            "availability_map": self.engine.availability_map,
+            "selections": {f"{w}::{r}": self.combos[(w, r)].currentText() for w in self.engine.week_columns for r in ROLES_ORDER if (w, r) in self.combos}
+        }
+        
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            QMessageBox.information(self, "Success", "State saved successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save state: {str(e)}")
+
+    def load_state(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load State", "", "JSON Files (*.json)")
+        if not path: return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            self.engine.week_columns = data["week_columns"]
+            self.engine.all_members = data["all_members"]
+            self.engine.availability_map = data["availability_map"]
+            
+            self.engine.initial_roster = {w: {} for w in self.engine.week_columns}
+            selections = data.get("selections", {})
+            for k, v in selections.items():
+                if "::" in k:
+                    w, r = k.split("::", 1)
+                    if w not in self.engine.initial_roster:
+                        self.engine.initial_roster[w] = {}
+                    self.engine.initial_roster[w][r] = v
+                
+            self.lbl_status.setText(f"Loaded State: {os.path.basename(path)}")
+            self.lbl_status.setStyleSheet("color: #4CAF50; margin-left: 10px;")
+            self.render_roster_grid()
+            self.trigger_dashboard_update()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load state: {str(e)}")
 
     def clear_grid(self):
         if not self.combos: return
@@ -186,10 +242,10 @@ class RosterApp(QMainWindow):
                 draft = self.engine.initial_roster[week].get(role, "")
                 display_val = ""
                 if draft:
-                    display_val = draft
-                    md_draft = self.engine.initial_roster[week].get("MD", "")
-                    # Note: md_draft is just a name "John".
-                    if draft == md_draft and md_draft:
+                    draft_clean = draft.replace(" (MD)", "").strip()
+                    display_val = draft_clean
+                    md_draft = self.engine.initial_roster[week].get("MD", "").replace(" (MD)", "").strip()
+                    if draft_clean == md_draft and md_draft:
                         display_val += " (MD)"
                 
                 cb.addItem(""); 
@@ -207,20 +263,19 @@ class RosterApp(QMainWindow):
         
         if role == "MD":
             # Show ANYONE assigned to a band role this week who has MD capability
-            potentials = []
+            potentials =[]
             for br in BAND_ROLES:
                 if (week, br) in self.combos:
                     val = self.combos[(week, br)].currentText()
                     val_clean = val.replace(" (MD)", "").strip()
                     if val_clean:
-                        roles = self.engine.all_members.get(val_clean, {}).get("Roles", [])
+                        roles = self.engine.all_members.get(val_clean, {}).get("Roles",[])
                         if "MD" in roles: potentials.append(val_clean)
             filtered = list(set(potentials))
             filtered.sort()
         else:
-            # FIX: Filter out anyone busy in ANY other column (except MD)
-            capable = self.engine.availability_map[week][role]
-            busy = []
+            capable = self.engine.availability_map[week].get(role, [])
+            busy =[]
             for r in ROLES_ORDER:
                 if r == role: continue
                 if r == "MD": continue # MD is allowed to overlap
@@ -230,7 +285,7 @@ class RosterApp(QMainWindow):
                     if val_clean: busy.append(val_clean)
             
             # Allow current user to stay selected (don't filter self out if re-opening box)
-            filtered = [p for p in capable if p not in busy or p == curr_clean]
+            filtered =[p for p in capable if p not in busy or p == curr_clean]
             if "Cleanup" not in role: filtered.sort()
         
         widget.blockSignals(True)
@@ -304,7 +359,7 @@ class RosterApp(QMainWindow):
     def validate_all(self):
         bg = THEMES[self.current_theme]['input_bg']
         for week in self.engine.week_columns:
-            seen, dupes = {}, []
+            seen, dupes = {},[]
             for role in ROLES_ORDER:
                 if role == "MD": continue
                 val = self.combos[(week, role)].currentText().replace(" (MD)", "")
@@ -377,7 +432,7 @@ class RosterApp(QMainWindow):
                 rl.setAlignment(Qt.AlignCenter)
                 self.dash_l.addWidget(rl, 1, cur_r_col)
                 
-                members = []
+                members =[]
                 if cat == "LG":
                     for o in CLEANUP_OPTIONS:
                         act = role in cl_active.get(o, set())
@@ -389,6 +444,7 @@ class RosterApp(QMainWindow):
                         # Capable?
                         can = False
                         if "Usher" in role: can = "Usher" in d["Roles"]
+                        elif "Vocal" in role: can = "Vocal" in d["Roles"]
                         elif role in d["Roles"]: can = True
                         
                         if can:
@@ -446,7 +502,7 @@ class RosterApp(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save Excel", "roster.xlsx", "Excel Files (*.xlsx)")
         if not path: return
         
-        data = []
+        data =[]
         for w in self.engine.week_columns:
             r = {"Week": w}
             for role in ROLES_ORDER: 
@@ -500,7 +556,7 @@ class RosterApp(QMainWindow):
         COL_W = 160; ROW_H = 30; MARGIN = 20; SP = 10
         EC = THEMES["Light"]["cats"]
         
-        EXPORT_ROLES = [r for r in ROLES_ORDER if r != "MD"]
+        EXPORT_ROLES =[r for r in ROLES_ORDER if r != "MD"]
         
         rw = COL_W * (len(EXPORT_ROLES)+1)
         dw = 0
@@ -525,6 +581,7 @@ class RosterApp(QMainWindow):
                     for n, d in self.engine.all_members.items():
                         can = False
                         if "Usher" in r: can = "Usher" in d["Roles"]
+                        elif "Vocal" in r: can = "Vocal" in d["Roles"]
                         elif r in d["Roles"]: can = True
                         if can: c += 1
                 mx_rows = max(mx_rows, c)
@@ -572,7 +629,7 @@ class RosterApp(QMainWindow):
         # Draw Dash
         y += 60; x = (iw - dw)//2; cur_x = x
         for cat, data in CATEGORY_CONFIG.items():
-            roles = [r for r in data["roles"] if r != "MD"] # Filter MD out
+            roles =[r for r in data["roles"] if r != "MD"] # Filter MD out
             if not roles: continue
             
             w = len(roles)*COL_W
@@ -584,7 +641,7 @@ class RosterApp(QMainWindow):
                 draw.rectangle([rx, y+ROW_H, rx+COL_W, y+ROW_H*2], fill="#eee", outline="black")
                 draw.text((rx+5, y+ROW_H+5), r, fill="black", font=fontb)
                 
-                mems = []
+                mems =[]
                 if cat == "LG":
                     for o in CLEANUP_OPTIONS:
                         act = r in cl_act.get(o, set())
@@ -596,6 +653,7 @@ class RosterApp(QMainWindow):
                         # Capable?
                         can = False
                         if "Usher" in r: can = "Usher" in d["Roles"]
+                        elif "Vocal" in r: can = "Vocal" in d["Roles"]
                         elif r in d["Roles"]: can = True
                         
                         if can:
